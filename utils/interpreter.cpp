@@ -20,13 +20,60 @@ uint64_t Interpreter::interpret(std::vector<uint64_t> code) {
         return(instr);
     };
 
+    // Allocate heap
+    uint64_t* heap = new uint64_t[HEAPSIZE];
+    uint64_t hptr = 0; // Always point to next available heap slot
+
+    // Interpret loop
     while (true) {
         uint64_t instr = readword();
         switch (instr) {
+            // ----------------------------------------------
+            // PUSH VALUES (DIRECTLY OR HEAP PTR)
+            // ----------------------------------------------
             case I::LOAD64 : {
                 push(readword());
                 break;
-            } case I::ADD1 : {
+            } case I::LOADPTR : {
+                // Expects <tagged len> <byte> <byte> ...
+                uint64_t len = readword(); Type type;
+                uint64_t start = hptr;
+
+                // Get the complex object length and type
+                if ((len & VECT_MASK) == VECT_TAG) {
+                    type = VECT;
+                } else if ((len & STRG_MASK) == STRG_TAG) {
+                    type = STRG;
+                } else {
+                    throw std::logic_error("Unknown length field");
+                }
+                // Length was tagged by compiler to share type
+                // Transfering that info to the heap ptr
+                len = len >> VECT_SHIFT;
+                heap[hptr] = len;               // Push raw length onto heap
+                hptr += 1;
+
+                // Push values onto the heap
+                for (uint64_t i = 0; i < len; ++i) {
+                    heap[hptr] = readword();
+                    hptr += 1;
+                }
+
+                // Aligns on 8-byte boundaries automatically
+                // because 64-bit words
+
+                // Push tagged pointer onto the stack
+                if (type == VECT) {
+                    push((start << VECT_SHIFT) | VECT_TAG);
+                } else {
+                    push((start << STRG_SHIFT) | STRG_TAG);
+                }
+                break;
+            }
+            // ----------------------------------------------
+            // UNARY OPERATORS
+            // ----------------------------------------------
+            case I::ADD1 : {
                 uint64_t e0 = pop();
                 push(e0 + 4); // Because of two bit tag
                 break;
@@ -44,7 +91,7 @@ uint64_t Interpreter::interpret(std::vector<uint64_t> code) {
                 break;
             } case I::ISNULL : {
                 uint64_t e0 = pop();
-                if (e0 == NULL_VAL) {
+                if (e0 == EMPTY_LIST) {
                     push(box_bool(true));
                 } else {
                     push(box_bool(false));
@@ -84,7 +131,11 @@ uint64_t Interpreter::interpret(std::vector<uint64_t> code) {
                     push(box_bool(false));
                 }
                 break;
-            } case I::ADD : {
+            }
+            // ----------------------------------------------
+            // BINARY OPERATORS
+            // ----------------------------------------------
+            case I::ADD : {
                 // Tag is LSB 00 so just add
                 uint64_t e1 = pop();
                 uint64_t e0 = pop();
@@ -128,61 +179,283 @@ uint64_t Interpreter::interpret(std::vector<uint64_t> code) {
                     push(box_bool(false));
                 }
                 break;
-            } case I::RETURN :
-                return(pop());
+            }
+            // ----------------------------------------------
+            // LOCALS
+            // ----------------------------------------------
+            case I::STOREUV : {
+                uint64_t uvar_idx = readword();
+                uint64_t val = pop();
+                //if (uvar_idx < loc_vars.size()) {
+                //    loc_vars[uvar_idx] = val;
+                //} else if (uvar_idx == loc_vars.size()) {
+                //    loc_vars.push_back(val);
+                //} else {
+                //    throw std::logic_error("User var assigned out of order\n");
+                //}
                 break;
-            default :
-                std::cerr << "ERROR\n";
+            } case I::LOADUV : {
+                uint64_t uvar_idx = readword();
+                //push(loc_vars.at(uvar_idx));
                 break;
+            }
+            // ----------------------------------------------
+            // CONDITIONAL LOGIC
+            // ----------------------------------------------
+            case I::JUMP : {
+                uint64_t offset = readword();
+                pc += offset;
+                break;
+            } case I::JUMPIFFALSE : {
+                uint64_t result = pop();
+                uint64_t offset = readword();
+                if ((result & BOOL_MASK) != BOOL_TAG || (result >> BOOL_SHIFT) == 0) {
+                    pc += offset;
+                }
+                break;
+            }
+            // ----------------------------------------------
+            // PAIRS, LISTS
+            // ----------------------------------------------
+            case I::CONS : {
+                uint64_t cdr = pop();
+                uint64_t car = pop();
+                heap[hptr] = car;
+                heap[hptr + 1] = cdr;
+
+                uint64_t loc_tag = (hptr << PAIR_SHIFT) | PAIR_TAG;
+                hptr += 2;
+                push(loc_tag);
+                break;
+            } case I::CAR : {
+                uint64_t loc_tag = pop();
+                if ((loc_tag & PAIR_MASK) == PAIR_TAG) {
+                    uint64_t car = heap[loc_tag >> PAIR_SHIFT];
+                    push(car);
+                } else {
+                    throw std::logic_error("car of non-pair\n");
+                }
+                break;
+            } case I::CDR : {
+                uint64_t loc_tag = pop();
+                if ((loc_tag & PAIR_MASK) == PAIR_TAG) {
+                    uint64_t cdr = heap[(loc_tag >> PAIR_SHIFT) + 1];
+                    push(cdr);
+                } else {
+                    throw std::logic_error("cdr of non-pair\n");
+                }
+                break;
+            }
+            // ----------------------------------------------
+            // STRINGS
+            // ----------------------------------------------
+            // TODO: Reduce to char size data
+            case I::STROP : {
+                uint64_t strlen = readword();
+                uint64_t start = hptr;
+
+                heap[hptr] = strlen;
+                hptr += 1;
+                for (uint64_t i = 0; i < strlen; ++i) {
+                    uint64_t c = pop();
+                    if ((c & CHAR_MASK) != CHAR_TAG) {
+                        throw std::logic_error("string opr expected char\n");
+                    }
+                    heap[hptr] = (c >> CHAR_SHIFT);
+                    hptr += 1;
+                }
+
+                push((start << STRG_SHIFT) | STRG_TAG);
+                break;
+            } case I::STRLEN : {
+                uint64_t sptr = pop();
+                if ((sptr & STRG_MASK) != STRG_TAG) {
+                    throw std::logic_error("string-length expected string target\n");
+                }
+                sptr = sptr >> STRG_SHIFT;
+                push(box_fixnum(heap[sptr]));
+                break;
+            } case I::STRREF : {
+                uint64_t idx = pop();
+                uint64_t sptr = pop();
+                if ((sptr & STRG_MASK) != STRG_TAG) {
+                    throw std::logic_error("string-ref expected string target\n");
+                } else if ((idx & FNUM_MASK) != FNUM_TAG) {
+                    throw std::logic_error("string-ref expected numeric index\n");
+                }
+
+                sptr = sptr >> STRG_SHIFT;
+                idx = idx >> FNUM_SHIFT;
+                if (heap[sptr] <= idx) {
+                    throw std::logic_error("string-ref out of range\n");
+                }
+                push(heap[sptr + idx + 1]); // Skip length word
+                break;
+            } case I::STRSET : {
+                uint64_t c = pop();
+                uint64_t idx = pop();
+                uint64_t sptr = pop();
+                if ((sptr & STRG_MASK) != STRG_TAG) {
+                    throw std::logic_error("string-set! expected string target\n");
+                } else if ((idx & FNUM_MASK) != FNUM_TAG) {
+                    throw std::logic_error("string-set! expected numeric index\n");
+                } else if ((c & CHAR_MASK) != CHAR_TAG) {
+                    throw std::logic_error("string-set! expected char setval\n");
+                }
+
+                sptr = sptr >> STRG_SHIFT;
+                idx = idx >> FNUM_SHIFT;
+                if (heap[sptr] <= idx) {
+                    throw std::logic_error("string-set! out of range\n");
+                }
+
+                heap[sptr + idx + 1] = c;
+                push(box_strg(sptr)); // Unspecified ret; chose to ret the str
+                break;
+            } case I::STRAPP : {
+                uint64_t argct = readword();
+                uint64_t new_sptr = hptr, new_len = 0;
+                uint64_t sptr, len;
+
+                hptr += 1;
+                for (uint64_t i = 0; i < argct ; ++i) {
+                    sptr = pop();
+                    if ((sptr & STRG_MASK) != STRG_TAG) {
+                        throw std::logic_error("string-append expected string\n");
+                    }
+                    sptr = sptr >> STRG_SHIFT;
+                    len = heap[sptr]; new_len += len;
+                    for (uint64_t j = 0; j < len; ++j) {
+                        heap[hptr] = heap[sptr + j + 1];
+                        hptr += 1;
+                    }
+                }
+                heap[new_sptr] = new_len;
+                push(box_strg(new_sptr)); // Unspecified ret; chose to ret the str
+                break;
+            }
+            // ----------------------------------------------
+            // VECTORS
+            // ----------------------------------------------
+            case I::VECOP : {
+                uint64_t veclen = readword();
+                uint64_t start = hptr;
+                uint64_t val;
+
+                heap[hptr] = veclen;
+                hptr += 1;
+                for (uint64_t i = 0; i < veclen; ++i) {
+                    val = pop();
+                    heap[hptr] = (val >> VECT_SHIFT);
+                    hptr += 1;
+                }
+
+                push((start << VECT_SHIFT) | VECT_TAG);
+                break;
+            } case I::VECLEN : {
+                uint64_t sptr = pop();
+                if ((sptr & VECT_MASK) != VECT_TAG) {
+                    throw std::logic_error("vector-length expected vector target\n");
+                }
+                sptr = sptr >> VECT_SHIFT;
+                // Expect sptr word contains raw length
+                push(box_fixnum(heap[sptr]));
+                break;
+            } case I::VECREF : {
+                uint64_t idx = pop();
+                uint64_t sptr = pop();
+                if ((sptr & VECT_MASK) != STRG_TAG) {
+                    throw std::logic_error("vector-ref expected vector target\n");
+                } else if ((idx & FNUM_MASK) != FNUM_TAG) {
+                    throw std::logic_error("vector-ref expected numeric index\n");
+                }
+
+                sptr = sptr >> VECT_SHIFT;
+                idx = idx >> FNUM_SHIFT;
+                if (heap[sptr] <= idx) {
+                    throw std::logic_error("vector-ref out of range\n");
+                }
+                push(heap[sptr + idx + 1]); // Skip length word
+                break;
+            } case I::VECSET : {
+                uint64_t val = pop();
+                uint64_t idx = pop();
+                uint64_t sptr = pop();
+                if ((sptr & VECT_MASK) != VECT_TAG) {
+                    throw std::logic_error("vector-set! expected vector target\n");
+                } else if ((idx & FNUM_MASK) != FNUM_TAG) {
+                    throw std::logic_error("vector-set! expected numeric index\n");
+                }
+
+                sptr = sptr >> VECT_SHIFT;
+                idx = idx >> FNUM_SHIFT;
+                if (heap[sptr] <= idx) {
+                    throw std::logic_error("vector-set! out of range\n");
+                }
+
+                heap[sptr + idx + 1] = val;
+                push(box_strg(sptr)); // Unspecified ret; chose to ret the vec
+                break;
+            } case I::VECAPP : {
+                uint64_t argct = readword();
+                uint64_t new_sptr = hptr, new_len = 0;
+                uint64_t sptr, len;
+
+                hptr += 1;
+                for (uint64_t i = 0; i < argct ; ++i) {
+                    sptr = pop();
+                    sptr = sptr >> VECT_SHIFT;
+                    len = heap[sptr]; new_len += heap[sptr];
+                    for (uint64_t j = 0; j < len; ++j) {
+                        heap[hptr] = heap[sptr + j + 1];
+                        hptr += 1;
+                    }
+                }
+                heap[new_sptr] = new_len; // Store raw len
+                push(box_vect(new_sptr)); // Unspecified ret; chose to ret the vec
+                break;
+
+                break;
+            }
+            // ----------------------------------------------
+            // SIDE EFFECTS
+            // ----------------------------------------------
+            case I::BEGINPOP : {
+                // Clear results of expressions where only side effects matter
+                pop();
+                break;
+            }
+            // ----------------------------------------------
+            // OTHER
+            // ----------------------------------------------
+            case I::RETURN : {
+                uint64_t result = pop();
+                print_value(result, heap, std::cout);
+                delete[] heap;
+                return(result);
+                break;
+            } default : {
+                delete[] heap;
+                throw std::logic_error("OPCODE ERROR\n");
+                break;
+            }
         }
     }
     std::cerr << "Fell off the end\n";
 }
 
+// ----------------------------------------------------------
 // Helpers
 void Interpreter::push(uint64_t val) {
     stack.push_back(val);
 }
 
 uint64_t Interpreter::pop(void) {
+    if (stack.size() == 0) {
+        throw std::logic_error("Popped empty stack\n");
+    }
     uint64_t val = std::move(stack.back());
     stack.pop_back();
     return(val);
-}
-
-// ----------------------------------------------------------
-// Detag and print
-void print_value(uint64_t val, std::ostream &s) {
-    if ((val & FNUM_MASK) == FNUM_TAG) {
-        s << (val >> FNUM_SHIFT) << "\n";
-    } else if ((val & CHAR_MASK) == CHAR_TAG) {
-        s << reinterpret_cast<unsigned char>(static_cast<uint8_t>(val >> CHAR_SHIFT)) << "\n";
-    } else if ((val & BOOL_MASK) == BOOL_TAG) {
-        if ((val >> BOOL_SHIFT) == 1) {
-            s << "#t\n";
-        } else {
-            s << "#f\n";
-        }
-    } else if (val == EMPTY_LIST) {
-        s << "()\n";
-    }
-}
-
-// ----------------------------------------------------------
-// Convert stream back to code vector
-std::vector<uint64_t> code_from_stream(std::istream &s) {
-    std::vector<uint64_t> code;
-
-    uint8_t buf[8];
-    // Cast b/c want to read to unsigned type
-    // o/w had overflow issue with breaking at 2016
-    while (s.read(reinterpret_cast<char*>(buf), 8)) {
-        uint64_t instr = 0;
-        for (int i = 0; i < 8; i++) {
-            instr |= static_cast<uint64_t>(buf[i]) << 8*i;
-        }
-        code.push_back(instr);
-    }
-    return(code);
 }
 

@@ -64,9 +64,15 @@ TEST_CASE("Main test loop to input .scm and confirm outputs") {
     } ;
 
     std::vector<Case> tests = {
+        // ------------------------------------------------------
+        // PRIMITIVES
+        // ------------------------------------------------------
         {"fixnum",                      "42", "42\n"},
         {"fixnum with surrounding wsp", "       \n   \t 42 \r\n   ", "42\n"},
         {"large fixnum",                "4901231205", "4901231205\n"},
+        // ------------------------------------------------------
+        // UNARY OPERATORS
+        // ------------------------------------------------------
         {"add1",                        "(add1 42)", "43\n"},
         {"sub1",                        "(sub1 42)", "41\n"},
         {"integer->char",               "(integer->char 42)", "*\n"},
@@ -78,10 +84,13 @@ TEST_CASE("Main test loop to input .scm and confirm outputs") {
         {"not false",                   "(not #f)", "#t\n"},
         {"0 is truthy",                 "(not 0)", "#f\n"},
         {"1 is truthy",                 "(not 1)", "#f\n"},
-        {"yes integer?",                "(integer? 1)", "#t\n"},
-        {"no integer?",                 "(integer? #t)", "#f\n"},
-        {"yes boolean?",                "(boolean? #t)", "#t\n"},
-        {"no boolean?",                 "(boolean? 1)", "#f\n"},
+        {"integer? true",               "(integer? 1)", "#t\n"},
+        {"integer? false",              "(integer? #t)", "#f\n"},
+        {"boolean? true",               "(boolean? #t)", "#t\n"},
+        {"boolean? false",              "(boolean? 1)", "#f\n"},
+        // ------------------------------------------------------
+        // BINARY OPERATORS
+        // ------------------------------------------------------
         {"addition",                    "(+ 2 3)", "5\n"},
         {"nested addition",             "(+ (+ 2 4) 3)", "9\n"},
         {"other way nested addition",   "(+ 2 (+ 4 3))", "9\n"},
@@ -98,7 +107,27 @@ TEST_CASE("Main test loop to input .scm and confirm outputs") {
         {"nested greater",              "(> (* 2 8) (+ 5 1))", "#t\n"},
         {"equal",                       "(= 2 2)", "#t\n"},
         {"not equal",                   "(= 2 3)", "#f\n"},
-        {"nested equal",                "(= (* 2 3) (+ 5 1))", "#t\n"}
+        {"nested equal",                "(= (* 2 3) (+ 5 1))", "#t\n"},
+        // ------------------------------------------------------
+        // LET BINDINGS
+        // ------------------------------------------------------
+        {"bind one var",                "(let ((x 2)) x)", "2\n"},
+        {"bind two var ret #1",         "(let ((x 2) (y 3)) x)", "2\n"},
+        {"bind two var ret #2",         "(let ((x 2) (y 3)) y)", "3\n"},
+        {"add two let bnds",            "(let ((x 2) (y 3)) (+ x y))", "5\n"},
+        {"nested mult two let bnds",    "(let ((x 2) (y 3)) (* x (* x y)))", "12\n"},
+        {"lots of lets",                "(let ((a 4)) (let ((a (let ((a 5)) a))) (let ((a 6)) a)))", "6\n"},
+        {"shadowing after",             "(let ((x 2) (y 3)) (+ y (let ((y 4)) y)))", "7\n"},
+        {"shadowing before",            "(let ((x 2) (y 3)) (+ (let ((y 4)) y) y))", "7\n"},
+        // ------------------------------------------------------
+        // IF EXPRESSIONS
+        // ------------------------------------------------------
+        {"simple if true",              "(if (< 1 2) (+ 4 5) (* 2 3))", "9\n"},
+        {"simple if false",             "(if (< 3 2) (+ 4 5) (* 2 3))", "6\n"},
+        {"nested if true true",         "(if (integer? 4) (if (< 1 2) (+ 4 5) (* 2 3)) (+ 6 7))", "9\n"},
+        {"nested if true false",        "(if (integer? 4) (if (> 1 2) (+ 4 5) (* 2 3)) (+ 6 7))", "6\n"},
+        {"nested if false true",        "(if (boolean? 4) (+ 6 7) (if (not #f) (+ 4 5) (* 2 3)))", "9\n"},
+        {"nested if false false",       "(if (not 4) (+ 6 7) (if (zero? #f) (+ 4 5) (* 2 3)))", "6\n"}
     };
 
     for (auto& t : tests) {
@@ -108,14 +137,18 @@ TEST_CASE("Main test loop to input .scm and confirm outputs") {
 
             // Parse
             std::vector<Expr> program = Parser(t.scm).parse();
+
             // Compile
             c.compile_function(program);
+
             // I/O
             c.write_to_stream(intermed);
             intermed.seekg(0);
             std::vector<uint64_t> recovered = code_from_stream(intermed);
+
             // Interpret
             uint64_t result = i.interpret(recovered);
+
             // I/O
             print_value(result, output);
             CHECK(output.str() == t.expect);

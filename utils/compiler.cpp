@@ -7,6 +7,7 @@
  *
  */
 
+//#define VERBOSE
 #include "compiler.h"
 
 // ----------------------------------------------------------
@@ -14,6 +15,9 @@
 // ----------------------------------------------------------
 // Top-level parsing function
 std::vector<Expr> Parser::parse(void) {
+    #ifdef VERBOSE
+    std::cerr << "parse\n";
+    #endif
     std::vector<Expr> int_rep;
     while (pos < length) {
         int_rep.push_back(parse_one());
@@ -24,18 +28,30 @@ std::vector<Expr> Parser::parse(void) {
 
 // Get next input character
 char Parser::peek(void) {
+    #ifdef VERBOSE
+    std::cerr << "    Peeked " << source[pos-1] << ">>" << source[pos] << "<<" << source[pos+1] << "\n";
+    #endif
     return(source[pos]);
 }
 
 // Skip whitespace characters
 void Parser::skip_wsp(void) {
+    #ifdef VERBOSE
+    std::cerr << "skip_wsp\n";
+    #endif
     while(pos < length && wsp.find(peek()) != std::string::npos) {
         pos += 1;
     }
+    #ifdef VERBOSE
+    std::cerr << "END skip_wsp\n";
+    #endif
 }
 
 // Parse one token
 Expr Parser::parse_one(void) {
+    #ifdef VERBOSE
+    std::cerr << "parse_one\n";
+    #endif
     skip_wsp();
     char curr = peek();
     if (curr == '(') {
@@ -46,18 +62,23 @@ Expr Parser::parse_one(void) {
         return(parse_opr());
     } else if (curr == '#') {
         return(parse_hash());
+    } else if (curr == '"') {
+        return(parse_string());
     } else if (isalpha(curr)) {
         return(parse_word());
     } else {
         std::cerr << "Unsupported token. Found <<" << curr << ">>\n";
         pos += 1;
-        Expr expr; expr.type = NILL;
+        Expr expr; expr.type = EMPT; expr.empty = true;
         return(expr);
     }
 }
 
 // Go down a layer and parse inside "()"
 Expr Parser::parse_nest(void) {
+    #ifdef VERBOSE
+    std::cerr << "parse_nest\n";
+    #endif
     Expr expr;
     pos += 1;
 
@@ -73,11 +94,17 @@ Expr Parser::parse_nest(void) {
         }
     }
     pos += 1;
+    #ifdef VERBOSE
+    std::cerr << "END parse_nest\n";
+    #endif
     return(expr);
 }
 
 // Parse integers (no +/- signs)
- Expr Parser::parse_number(void) {
+Expr Parser::parse_number(void) {
+    #ifdef VERBOSE
+    std::cerr << "parse_number\n";
+    #endif
     Expr expr; expr.type = FNUM;
     std::string num;
     char curr = peek();
@@ -97,37 +124,53 @@ Expr Parser::parse_opr(void) {
     Expr expr; expr.type = KEYW;
     std::string opr; opr += peek();
 
-    if (keyws.at(opr)) {
+    if (keyws.find(opr) != keyws.end()) {
         expr.keyw = keyws.at(opr);
         pos += 1;
         return(expr);
     } else {
-        throw std::logic_error("Invalid keyword\n");
+        std::cerr << "Unknown \"" << opr << "\"\n";
+        throw std::logic_error("Invalid symbol\n");
     }
 }
 
 // Parse things starting with letters
 Expr Parser::parse_word(void) {
-    Expr expr; expr.type = KEYW;
+    #ifdef VERBOSE
+    std::cerr << "parse_word\n";
+    #endif
+    Expr expr;
     std::string word;
 
-    while(pos < length && wsp.find(peek()) == std::string::npos) {
-        word += peek();
+    // Accumulate non-wsp and non-')' chars into a word
+    char next = peek();
+    while(pos < length && wsp.find(next) == std::string::npos && next != ')') {
+        word += next;
         pos += 1;
+        next = peek();
     }
+    if (next == ')') pos -= 1; // Correct to avoid skipping closer
 
-    if (keyws.at(word)) {
+    // Update src ptr; rest of fnc is figuring out what the word is
+    pos += 1;
+
+    // Check if word is keyword
+    if (keyws.find(word) != keyws.end()) {
+        expr.type = KEYW;
         expr.keyw = keyws.at(word);
-        pos += 1;
         return(expr);
-    } else {
-        std::cerr << "Unknown \"" << word << "\"\n";
-        throw std::logic_error("Invalid keyword\n");
+    }
+    // Assume is user-defined
+    else {
+        expr.type = UVAR;
+        expr.uvar = new std::string();
+        *(expr.uvar) = word;
+        return(expr);
     }
 }
 
 // Parse booleans and chars
- Expr Parser::parse_hash(void) {
+Expr Parser::parse_hash(void) {
     Expr expr; expr.type = BOOL;
     static const std::string wsp = " \n\t\v\f\r";
 
@@ -146,12 +189,60 @@ Expr Parser::parse_word(void) {
         expr.char_v = peek();
         pos += 1;
         return(expr);
+    } else {
+        throw std::logic_error("Invalid or unsupported token\n");
     }
-    throw std::logic_error("Invalid or unsupported token\n");
 }
+
+// Parse quoted constants
+Expr Parser::parse_quote(void) {
+    Expr expr;
+
+    pos += 1;
+    if (peek() == '#') {
+        pos += 1;
+        if (peek() == '(') {
+            expr.type = VECT;
+            pos += 1;
+            while (pos < length && peek() != ')') {
+                Expr c = parse_one();
+                expr.vect->push_back(c);
+                pos += 1;
+            }
+            pos += 1; // Skip the )
+        } else {
+            throw std::logic_error("Unknown/unsupported quoted constant\n");
+        }
+    } else {
+        throw std::logic_error("Unknown/unsupported quoted constant\n");
+    }
+
+    return(expr);
+}
+
+// Parse strings
+Expr Parser::parse_string(void) {
+    Expr expr; expr.type = STRG;
+    expr.strg = new std::vector<Expr>();
+
+    pos += 1;
+    while (pos < length && peek() != '"') {
+        Expr c; c.type = CHAR;
+        c.char_v = peek();
+        expr.strg->push_back(c);
+        pos += 1; // Skip the "
+    }
+    pos += 1;
+
+    return(expr);
+}
+
 // ----------------------------------------------------------
 // Stand-alone parse
 std::vector<Expr> scheme_parse(std::string source) {
+    #ifdef VERBOSE
+    std::cerr << "scheme_parse\n";
+    #endif
     return(Parser(source).parse());
 }
 
@@ -161,53 +252,168 @@ std::vector<Expr> scheme_parse(std::string source) {
 void Compiler::compile(std::vector<Expr> &expr_vec, std::size_t start) {
     if (start >= expr_vec.size()) throw std::logic_error("Bad compile start\n");
     for (std::size_t i = start; i < expr_vec.size(); ++i) {
-        switch (expr_vec[i].type) {
-            case EMPT :
-                code.push_back(I::LOAD64);
-                code.push_back(EMPTY_LIST);
-                break;
-            case NILL :
-                code.push_back(I::LOAD64);
-                code.push_back(NULL_VAL);
-                break;
-            case FNUM :
-                code.push_back(I::LOAD64);
-                code.push_back(box_fixnum(expr_vec[i].fnum_v));
-                break;
-            case CHAR :
-                code.push_back(I::LOAD64);
-                code.push_back(box_char(expr_vec[i].char_v));
-                break;
-            case BOOL :
-                code.push_back(I::LOAD64);
-                code.push_back(box_bool(expr_vec[i].bool_v));
-                break;
-            case KEYW :
-                code.push_back(expr_vec[i].keyw);
-                break;
-            case NEST : {
-                std::vector<Expr> &inside = *(expr_vec[i].nest);
-                // Recurse starting at first arg (pos 1)
-                Expr &opr = inside[0];
+        compile_one(expr_vec[i]);
+    }
+}
+
+void Compiler::compile_one(Expr &expr) {
+    switch (expr.type) {
+        case EMPT :
+            code.push_back(I::LOAD64);
+            code.push_back(EMPTY_LIST);
+            break;
+        case FNUM :
+            code.push_back(I::LOAD64);
+            code.push_back(box_fixnum(expr.fnum_v));
+            break;
+        case CHAR :
+            code.push_back(I::LOAD64);
+            code.push_back(box_char(expr.char_v));
+            break;
+        case BOOL :
+            code.push_back(I::LOAD64);
+            code.push_back(box_bool(expr.bool_v));
+            break;
+        case UVAR :
+            code.push_back(I::LOADUV);
+            break;
+        case KEYW :
+            code.push_back(expr.keyw);
+            break;
+        case STRG : {
+            std::vector<Expr> &chars = *(expr.strg);
+            code.push_back(I::LOADPTR);
+            code.push_back(box_strg(expr.strg->size()));
+            for (size_t i = 0; i < chars.size(); ++i) {
+                if (chars[i].type == CHAR) {
+                    code.push_back(box_char(chars[i].char_v));
+                } else {
+                    throw std::logic_error("Non-char in string\n");
+                }
+            }
+            break;
+        } case VECT : {
+            std::vector<Expr> &contents = *(expr.vect);
+            code.push_back(I::LOADPTR);
+            code.push_back(box_vect(expr.vect->size()));
+            for (size_t i = 0; i < contents.size(); ++i) {
+                compile_one(contents[i]);
+            }
+            break;
+        } case NEST : {
+            std::vector<Expr> &inside = *(expr.nest);
+            // Recurse starting at first arg (pos 1)
+            Expr &opr = inside[0];
+
+            // Handle let expressions: (let <bindings> <body>)
+            // <bindings> : ((<variable1> <init1>) ...)
+            if (opr.type == KEYW && opr.keyw == LET) {
+                // Deal with <bindings>
+                if (inside[1].type == NEST) {
+                    compile_bindings(*(inside[1].nest));
+                } else {
+                    throw std::logic_error("Bad <bindings> in let expression\n");
+                }
+                // Deal with <body>
+                if (inside.size() > 2) {
+                    compile(inside, 2);
+                } else {
+                    throw std::logic_error("Let <body> must have one or more expressions\n");
+                }
+            }
+            // Handle if expressions: (if <test> <consequent> <alternate>)
+            // where <alternate> is optional
+            else if (opr.type == KEYW && opr.keyw == IF) {
+                if (inside.size() < 3) {
+                    throw std::logic_error("Too few args to if expression\n");
+                } else if (inside.size() > 4) {
+                    throw std::logic_error("Too many args to if expression\n");
+                }
+
+                // Push <test>
+                compile_one(inside[1]);
+
+                // Push JUMPIFFALSE and placeholder 0 offset
+                code.push_back(I::JUMPIFFALSE);
+                auto idx = code.size();
+                code.push_back(0);
+                // Push <conseq> and count # instructions
+                compile_one(inside[2]);
+                // Set jump target for when <test> is #f
+                code[idx] = code.size() - idx + 1;
+                // Two greater than offset below because false branch
+                // also has to skip the JUMP instruction and offset
+
+                // Push JUMP and placeholder 0 offset
+                code.push_back(I::JUMP);
+                idx = code.size();
+                code.push_back(0);
+                // Push <altern> and count # instructions
+                if (inside.size() == 4) {
+                    compile_one(inside[3]);
+                }
+                // Set jump target for when <test> is #t
+                code[idx] = code.size() - idx - 1;
+            }
+            // Handle begin expressions: (begin <expr> <expr> ...)
+            // Simply means discard return values for non-terminal exprs
+            else if (opr.type == KEYW && opr.keyw == I::BEGIN) {
+                for (size_t i = 1; i < inside.size() - 1; ++i) {
+                    compile_one(inside[i]);
+                    code.push_back(I::BEGINPOP);
+                }
+                compile_one(inside[inside.size() - 1]); // Last expr, whose retval not cleared
+            }
+            // Handle simpler (<operator> <arg> <arg> ...) expressions
+            else {
                 compile(inside, 1);
 
                 // Add operator codes
                 if (opr.type == KEYW && opr.keyw) {
                     code.push_back(opr.keyw);
                 } else {
-                    throw std::logic_error("Missing operator\n");
+                    throw std::logic_error("Invalid operator\n");
                 }
-                break;
+
+                // Exprs with variable number of arguments
+                if (opr.keyw == I::STROP || opr.keyw == I::STRAPP ||
+                    opr.keyw == I::VECOP || opr.keyw == I::VECAPP) {
+                    code.push_back(inside.size() - 1);
+                }
             }
-            default :
-                break;
-        }
+            break;
+        } default :
+            break;
     }
 }
 
 void Compiler::compile_function(std::vector<Expr> &int_rep) {
     compile(int_rep, 0);
     code.push_back(I::RETURN);
+}
+
+void Compiler::compile_bindings(std::vector<Expr> &bindings) {
+    for (auto &itr : bindings) {
+        // Go through the bindings, which should be Expr vectors holding two Exprs
+        // Compile the second Expr, push STOREUV, push the first Expr (var name)
+        if (itr.type == NEST && itr.nest->size() == 2) {
+            std::vector<Expr> &bind = *(itr.nest);
+            compile_one(bind[1]);
+            code.push_back(I::STOREUV);
+            if (bind[0].type == UVAR) {
+                throw std::logic_error("Bad variable in let binding\n");
+            } else {
+                throw std::logic_error("Bad variable in let binding\n");
+            }
+        } else {
+            std::cerr << "ERROR\n" <<
+                "Type: " << type_lu.at(itr.type) << "\n";
+            if (itr.type == NEST)
+                std::cerr << "Size: " << itr.nest->size() << "\n";
+            throw std::logic_error("Bad binding in let <bindings>\n");
+        }
+
+    }
 }
 
 void Compiler::write_to_stream(std::ostream &f) {
@@ -220,17 +426,3 @@ void Compiler::write_to_stream(std::ostream &f) {
     }
 }
 
-// ----------------------------------------------------------
-// OPCODE FUNCTIONS
-// ----------------------------------------------------------
-uint64_t box_fixnum(int64_t fnum_v) {
-    return((fnum_v << FNUM_SHIFT) | FNUM_TAG);
-}
-
-uint64_t box_char(char char_v) {
-    return((char_v << CHAR_SHIFT) | CHAR_TAG);
-}
-
-uint64_t box_bool(bool bool_v) {
-    return((bool_v << BOOL_SHIFT) | BOOL_TAG);
-}

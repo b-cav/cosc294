@@ -9,7 +9,7 @@ $(EXECS): %: %.cpp
 	$(CXX) $(CXXFLAGS) $^ $(LIBS) -o $@
 
 run:
-	./run_tests -ni
+	./test_bank -ni
 
 clean:
 	rm -rf $(EXECS)

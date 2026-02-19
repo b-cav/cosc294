@@ -8,10 +8,11 @@
  *
  */
 
-#include <iostream>
-#include <vector>
-#include <cstdint>
-#include "compiler.h"
+#include "helpers.h"
+#include "printer.h"
+
+// Allocate 1KB for the heap
+#define HEAPSIZE 1024
 
 // ----------------------------------------------------------
 // INTERPRETER CLASS
@@ -32,12 +33,4 @@ private:
     uint64_t pc = 0;
     std::vector<uint64_t> stack;
 };
-
-// ----------------------------------------------------------
-// Detag and print
-void print_value(uint64_t val, std::ostream &s);
-
-// ----------------------------------------------------------
-// Convert stream back to code vector
-std::vector<uint64_t> code_from_stream(std::istream &s);
 

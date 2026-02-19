@@ -11,7 +11,9 @@
 
 #include <iostream>
 #include <string>
+#include <sstream>
 #include "compiler.h"
+#include "printer.h"
 
 int main(void) {
     std::string source, chunk;
@@ -25,15 +27,22 @@ int main(void) {
 
     std::cerr << "INPUT: <<" << source << ">>\n";
     // Parse
-    std::cerr << "Parsing...\n";
     program = scheme_parse(source);
 
+    std::cerr << "\nPARSER OUTPUT:\n";
+    prog_print(program, 0);
+
     // Compile
-    std::cerr << "Compiling...\n";
     compiler.compile_function(program);
 
+    std::cerr << "\nCOMPILER OUTPUT:\n";
+    std::stringstream output;
+    compiler.write_to_stream(output);
+    output.seekg(0);
+    bc_print(output);
+
     // Output
-    std::cerr << "Writing...\n";
+    std::cerr << "\nWriting byte code...\n";
     compiler.write_to_stream(std::cout);
 }
 

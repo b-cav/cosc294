@@ -10,6 +10,7 @@
  */
 
 #include "interpreter.h"
+#include "printer.h"
 
 int main(int argc, char** argv) {
     Interpreter i;
@@ -17,7 +18,7 @@ int main(int argc, char** argv) {
 
     uint64_t result = i.interpret(code);
     printf("Return val (top of stack rn): \n");
-    print_value(result, std::cout);
+    print_value(result, nullptr, std::cout);
 
     exit(EXIT_SUCCESS);
 }
