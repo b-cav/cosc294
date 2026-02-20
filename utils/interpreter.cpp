@@ -7,13 +7,14 @@
  *
  */
 
+//#define VERBOSE
 #include "interpreter.h"
 
 // ----------------------------------------------------------
 // INTERPRETER FUNCTIONS
 // ----------------------------------------------------------
 // Top-level interpret function
-uint64_t Interpreter::interpret(std::vector<uint64_t> code) {
+std::string Interpreter::interpret(std::vector<uint64_t> code) {
     auto readword = [this, &code](void) {
         uint64_t instr = code[this->pc];
         this->pc += 1;
@@ -139,6 +140,9 @@ uint64_t Interpreter::interpret(std::vector<uint64_t> code) {
                 // Tag is LSB 00 so just add
                 uint64_t e1 = pop();
                 uint64_t e0 = pop();
+                #ifdef VERBOSE
+                std::cerr << "Adding " << e1 << ", " << e0 << "\n";
+                #endif
                 push(e0 + e1);
                 break;
             } case I::SUB : {
@@ -183,20 +187,29 @@ uint64_t Interpreter::interpret(std::vector<uint64_t> code) {
             // ----------------------------------------------
             // LOCALS
             // ----------------------------------------------
-            case I::STOREUV : {
-                uint64_t uvar_idx = readword();
-                uint64_t val = pop();
-                //if (uvar_idx < loc_vars.size()) {
-                //    loc_vars[uvar_idx] = val;
-                //} else if (uvar_idx == loc_vars.size()) {
-                //    loc_vars.push_back(val);
-                //} else {
-                //    throw std::logic_error("User var assigned out of order\n");
-                //}
-                break;
-            } case I::LOADUV : {
-                uint64_t uvar_idx = readword();
-                //push(loc_vars.at(uvar_idx));
+            case I::LOADUV : {
+                // Get base depth, offset
+                uint64_t uvar_dep = readword();
+                uint64_t uvar_offset = readword();
+                #ifdef VERBOSE
+                std::cerr << "dep " << uvar_dep << "; offset " << uvar_offset << "\n";
+                #endif
+                // Get pointer to base of the variable
+                uint64_t var_base = base;
+                #ifdef VERBOSE
+                std::cerr << "var's base at " << var_base << "; have to go up " << base_dep - uvar_dep << " times; ";
+                #endif
+                for (uint64_t i = 0; i < base_dep - uvar_dep; ++i) {
+                    var_base = stack[var_base];
+                    #ifdef VERBOSE
+                    std::cerr << "var's base at " << var_base << "; ";
+                    #endif
+                }
+                // Add offset from the var's base
+                #ifdef VERBOSE
+                std::cerr << "Loading var from loc " << var_base + uvar_offset << "; ";
+                #endif
+                push(stack[var_base + uvar_offset]);
                 break;
             }
             // ----------------------------------------------
@@ -426,13 +439,73 @@ uint64_t Interpreter::interpret(std::vector<uint64_t> code) {
                 break;
             }
             // ----------------------------------------------
+            // FRAME MANAGEMENT
+            // ----------------------------------------------
+            case I::SETBASE : {
+                // Start frame with reference to beginning of prev frame
+                if (stack.size() != 0) {
+                    #ifdef VERBOSE
+                    std::cerr << "Setting base\n  ";
+                    #endif
+                    push(base);
+                    base = sptr - 1;
+                    #ifdef VERBOSE
+                    std::cerr << "  base set to " << base << "\n";
+                    #endif
+                } else {
+                    #ifdef VERBOSE
+                    std::cerr << "Setting base\n  ";
+                    #endif
+                    push(0);
+                    base = 0;
+                    #ifdef VERBOSE
+                    std::cerr << "  base set to " << base << "\n";
+                    #endif
+                }
+                base_dep += 1;
+                #ifdef VERBOSE
+                std::cerr << "  depth is " << base_dep << "\n";
+                #endif
+                break;
+            } case I::REBASE : {
+                // Reset the base pointer to beginning of prev frame
+                if (base != 0 && stack.size() != 0) {
+                    #ifdef VERBOSE
+                    std::cerr << "Rebasing\n  ";
+                    #endif
+                    // Grab expression result
+                    uint64_t result = pop();
+                    // Set stack top to where base points (ref to prev)
+                    sptr = base;
+                    // Grab ref to prev; set as new base
+                    base = stack[base];
+                    // Overwrite previous ref with result
+                    #ifdef VERBOSE
+                    std::cerr << "  ";
+                    #endif
+                    push(result);
+                    base_dep -= 1;
+                } else {
+                    if (base_dep != 0) {
+                        base_dep = 0;
+                    } else {
+                        throw std::logic_error("No base to clear\n");
+                    }
+                }
+                #ifdef VERBOSE
+                std::cerr << "  rebased to " << base << "\n";
+                #endif
+                break;
+            }
+            // ----------------------------------------------
             // OTHER
             // ----------------------------------------------
             case I::RETURN : {
                 uint64_t result = pop();
-                print_value(result, heap, std::cout);
+                std::stringstream output;
+                print_value(result, heap, output);
                 delete[] heap;
-                return(result);
+                return(output.str());
                 break;
             } default : {
                 delete[] heap;
@@ -447,15 +520,26 @@ uint64_t Interpreter::interpret(std::vector<uint64_t> code) {
 // ----------------------------------------------------------
 // Helpers
 void Interpreter::push(uint64_t val) {
-    stack.push_back(val);
+    if (sptr < stack.size()) {
+        stack[sptr] = val;
+    } else {
+        stack.push_back(val);
+    }
+    #ifdef VERBOSE
+    std::cerr << "Pushed " << val << " to loc " << sptr << "\n";
+    #endif
+    sptr += 1;
 }
 
 uint64_t Interpreter::pop(void) {
     if (stack.size() == 0) {
         throw std::logic_error("Popped empty stack\n");
     }
-    uint64_t val = std::move(stack.back());
-    stack.pop_back();
+    sptr -= 1;
+    uint64_t val = stack[sptr];
+    #ifdef VERBOSE
+    std::cerr << "Popped " << val << " from loc " << sptr << "\n";
+    #endif
     return(val);
 }
 

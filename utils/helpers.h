@@ -7,9 +7,10 @@
  */
 
 #pragma once
-#include <iostream>
-#include <vector>
 #include <cstdint>
+#include <iostream>
+#include <sstream>
+#include <vector>
 #include <map>
 #include <unordered_map>
 #include <string>
@@ -61,7 +62,8 @@ enum I : uint64_t {
     CONS, CAR, CDR,
     STROP, STRLEN, STRREF, STRSET, STRAPP,
     VECOP, VECLEN, VECREF, VECSET, VECAPP,
-    BEGIN, BEGINPOP
+    BEGIN, BEGINPOP,
+    SETBASE, REBASE,
 };
 
 const std::map<std::string, I> keyws = {
@@ -98,6 +100,7 @@ const std::map<I, std::string> instr_lu = {
     {LOAD64, "LOAD64"}, {RETURN, "RETURN"}, {STOREUV, "STOREUV"}, {LOADUV, "LOADUV"},
     {JUMP, "JUMP"}, {JUMPIFFALSE, "JUMPIFFALSE"}, {LOADPTR, "LOADPTR"},
     {BEGINPOP, "BEGINPOP"},
+    {SETBASE, "SETBASE"}, {REBASE, "REBASE"},
 };
 
 /* Stuff for internal representation

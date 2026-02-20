@@ -40,7 +40,7 @@ void print_expr(Expr &expr, int indent) {
             fprintf(stderr, "BOOLEAN: \"%d\"\n", expr.bool_v);
             break;
         case UVAR :
-            fprintf(stderr, "USER-DEFINED: Depth %lu, #%lu\n", expr.uvar_dep, expr.uvar_num);
+            fprintf(stderr, "USER-DEFINED: \"%s\"\n", expr.uvar->c_str());
             break;
         case KEYW :
             if (keyw_lu.find(expr.keyw) == keyw_lu.end()) {
@@ -108,10 +108,12 @@ void bc_print(std::istream &stream) {
             }
         } else if (instr == I::STROP || instr == I::STRAPP ||
             instr == I::VECOP || instr == I::VECAPP) {
-            uint64_t len = (readword());
+            uint64_t len = readword();
             fprintf(stderr, "LENG: %ld\n", len);
         } else if (instr == I::LOADUV || instr == I::STOREUV) {
-            fprintf(stderr, "UVAR: #%ld\n", readword());
+            uint64_t dep = readword();
+            uint64_t offset = readword();
+            fprintf(stderr, "UVAR: Depth %ld, offset %ld\n", dep, offset);
         } else if (instr == I::JUMP || instr == I::JUMPIFFALSE) {
             fprintf(stderr, "STEP: %ld\n", readword());
         }
@@ -163,7 +165,7 @@ void print_value(uint64_t val, uint64_t *heap, std::ostream &s) {
             uint64_t strlen = heap[loc];
 
             s << "#(";
-            // TODO: Convert to stringstream with recursive print)val
+            // TODO: Convert to stringstream with recursive print val
             std::string heap_str;
             for (uint64_t i = strlen; i > 0; --i) {
                 char c = (heap[loc + i]) >> CHAR_SHIFT;

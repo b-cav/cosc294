@@ -1,8 +1,8 @@
 pushd ../utils/
-make clean
-make
+make clean > /dev/null
+make > /dev/null
 popd
 
-make clean
-make
+make clean > /dev/null
+make > /dev/null
 make run

@@ -7,7 +7,8 @@
  *
  */
 
-//#define VERBOSE
+//#define VERBOSEPARSER
+//#define VERBOSECOMPILER
 #include "compiler.h"
 
 // ----------------------------------------------------------
@@ -15,7 +16,7 @@
 // ----------------------------------------------------------
 // Top-level parsing function
 std::vector<Expr> Parser::parse(void) {
-    #ifdef VERBOSE
+    #ifdef VERBOSEPARSER
     std::cerr << "parse\n";
     #endif
     std::vector<Expr> int_rep;
@@ -28,7 +29,7 @@ std::vector<Expr> Parser::parse(void) {
 
 // Get next input character
 char Parser::peek(void) {
-    #ifdef VERBOSE
+    #ifdef VERBOSEPARSER
     std::cerr << "    Peeked " << source[pos-1] << ">>" << source[pos] << "<<" << source[pos+1] << "\n";
     #endif
     return(source[pos]);
@@ -36,20 +37,20 @@ char Parser::peek(void) {
 
 // Skip whitespace characters
 void Parser::skip_wsp(void) {
-    #ifdef VERBOSE
+    #ifdef VERBOSEPARSER
     std::cerr << "skip_wsp\n";
     #endif
     while(pos < length && wsp.find(peek()) != std::string::npos) {
         pos += 1;
     }
-    #ifdef VERBOSE
+    #ifdef VERBOSEPARSER
     std::cerr << "END skip_wsp\n";
     #endif
 }
 
 // Parse one token
 Expr Parser::parse_one(void) {
-    #ifdef VERBOSE
+    #ifdef VERBOSEPARSER
     std::cerr << "parse_one\n";
     #endif
     skip_wsp();
@@ -76,7 +77,7 @@ Expr Parser::parse_one(void) {
 
 // Go down a layer and parse inside "()"
 Expr Parser::parse_nest(void) {
-    #ifdef VERBOSE
+    #ifdef VERBOSEPARSER
     std::cerr << "parse_nest\n";
     #endif
     Expr expr;
@@ -94,7 +95,7 @@ Expr Parser::parse_nest(void) {
         }
     }
     pos += 1;
-    #ifdef VERBOSE
+    #ifdef VERBOSEPARSER
     std::cerr << "END parse_nest\n";
     #endif
     return(expr);
@@ -102,7 +103,7 @@ Expr Parser::parse_nest(void) {
 
 // Parse integers (no +/- signs)
 Expr Parser::parse_number(void) {
-    #ifdef VERBOSE
+    #ifdef VERBOSEPARSER
     std::cerr << "parse_number\n";
     #endif
     Expr expr; expr.type = FNUM;
@@ -136,7 +137,7 @@ Expr Parser::parse_opr(void) {
 
 // Parse things starting with letters
 Expr Parser::parse_word(void) {
-    #ifdef VERBOSE
+    #ifdef VERBOSEPARSER
     std::cerr << "parse_word\n";
     #endif
     Expr expr;
@@ -240,7 +241,7 @@ Expr Parser::parse_string(void) {
 // ----------------------------------------------------------
 // Stand-alone parse
 std::vector<Expr> scheme_parse(std::string source) {
-    #ifdef VERBOSE
+    #ifdef VERBOSEPARSER
     std::cerr << "scheme_parse\n";
     #endif
     return(Parser(source).parse());
@@ -275,7 +276,7 @@ void Compiler::compile_one(Expr &expr) {
             code.push_back(box_bool(expr.bool_v));
             break;
         case UVAR :
-            code.push_back(I::LOADUV);
+            compile_uvar(expr.uvar);
             break;
         case KEYW :
             code.push_back(expr.keyw);
@@ -308,15 +309,23 @@ void Compiler::compile_one(Expr &expr) {
             // Handle let expressions: (let <bindings> <body>)
             // <bindings> : ((<variable1> <init1>) ...)
             if (opr.type == KEYW && opr.keyw == LET) {
+                code.push_back(I::SETBASE);
                 // Deal with <bindings>
                 if (inside[1].type == NEST) {
+                    // Add new uvar map for this new scope
+                    uvar_maps.push_back(std::unordered_map<std::string, uint64_t>());
                     compile_bindings(*(inside[1].nest));
                 } else {
                     throw std::logic_error("Bad <bindings> in let expression\n");
                 }
+
                 // Deal with <body>
                 if (inside.size() > 2) {
                     compile(inside, 2);
+                    // Close let binding scope
+                    uvar_maps.pop_back();
+                    // Exit the let frame
+                    code.push_back(I::REBASE);
                 } else {
                     throw std::logic_error("Let <body> must have one or more expressions\n");
                 }
@@ -393,26 +402,45 @@ void Compiler::compile_function(std::vector<Expr> &int_rep) {
 }
 
 void Compiler::compile_bindings(std::vector<Expr> &bindings) {
+    uint64_t uvar_idx = 1; // Count from 1 because offset from base anyways
+
     for (auto &itr : bindings) {
         // Go through the bindings, which should be Expr vectors holding two Exprs
         // Compile the second Expr, push STOREUV, push the first Expr (var name)
         if (itr.type == NEST && itr.nest->size() == 2) {
             std::vector<Expr> &bind = *(itr.nest);
             compile_one(bind[1]);
-            code.push_back(I::STOREUV);
             if (bind[0].type == UVAR) {
-                throw std::logic_error("Bad variable in let binding\n");
+                // Variables only stored internally
+                uvar_maps.back()[*(bind[0].uvar)] = uvar_idx;
+                uvar_idx += 1;
             } else {
                 throw std::logic_error("Bad variable in let binding\n");
             }
         } else {
-            std::cerr << "ERROR\n" <<
-                "Type: " << type_lu.at(itr.type) << "\n";
-            if (itr.type == NEST)
+            std::cerr << "Type: " << type_lu.at(itr.type) << "\n";
+            if (itr.type == NEST) {
                 std::cerr << "Size: " << itr.nest->size() << "\n";
+            }
             throw std::logic_error("Bad binding in let <bindings>\n");
         }
+    }
+}
 
+// Compile local variables outside of binding context
+void Compiler::compile_uvar(std::string *uvar){
+    // Search for var starting with most recent scope
+    for (int i = uvar_maps.size()-1; i >= 0; --i) {
+        auto it = uvar_maps[i].find(*uvar);
+        if (it != uvar_maps[i].end()) {
+            // Push variable as: LOADUV, scope depth, index/offset
+            code.push_back(LOADUV);
+            code.push_back(i);
+            code.push_back(it->second);
+            return;
+        } else {
+            throw std::logic_error("Unbound variable" + *uvar + "\n");
+        }
     }
 }
 

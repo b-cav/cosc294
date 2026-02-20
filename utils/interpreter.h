@@ -8,6 +8,7 @@
  *
  */
 
+#pragma once
 #include "helpers.h"
 #include "printer.h"
 
@@ -20,10 +21,10 @@
 class Interpreter {
 public:
     Interpreter(void) :
-        pc(0) {}
+        pc(0), sptr(0), base(0) {}
 
     // Top-level interpret function
-    uint64_t interpret(std::vector<uint64_t> code);
+    std::string interpret(std::vector<uint64_t> code);
 
     // Helpers
     void push(uint64_t val);
@@ -32,5 +33,8 @@ public:
 private:
     uint64_t pc = 0;
     std::vector<uint64_t> stack;
+    uint64_t sptr = 0;
+    uint64_t base = 0;
+    uint64_t base_dep = 0;
 };
 

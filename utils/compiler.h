@@ -7,6 +7,7 @@
  *
  */
 
+#pragma once
 #include <cctype>
 #include <fstream>
 #include "helpers.h"
@@ -17,7 +18,7 @@
 class Parser {
 public :
     Parser(std::string source) :
-        source(source), pos(0), length(source.length()), uvar_cnt(0) {}
+        source(source), pos(0), length(source.length()) {}
 
     // Top-level parsing function
     std::vector<Expr> parse(void);
@@ -69,8 +70,10 @@ std::vector<Expr> scheme_parse(std::string source);
 // ----------------------------------------------------------
 class Compiler {
 public :
+    // Constructor
+    // Add an empty map as 0 scope depth for globals
     Compiler(void) :
-        max_locals_count(0) {}
+        uvar_maps(1) {}
 
     // Top-level compile function
     void compile(std::vector<Expr> &expr_vec, std::size_t start);
@@ -87,6 +90,9 @@ public :
     // Compile let bindings
     void compile_bindings(std::vector<Expr> &assignments);
 
+    // Compile local variables outside of binding context
+    void compile_uvar(std::string *uvar);
+
     // Getter
     const std::vector<uint64_t>& get_code() const {
         return code;
@@ -94,7 +100,6 @@ public :
 
 private :
     std::vector<uint64_t> code;
-    uint64_t max_locals_count;
     std::vector<std::unordered_map<std::string, uint64_t>> uvar_maps;
     uint64_t uvar_cnt;
 };

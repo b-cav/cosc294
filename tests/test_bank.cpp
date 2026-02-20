@@ -9,6 +9,7 @@
 // Doctest setup
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
+#include "compiler.h"
 #include "interpreter.h"
 
 TEST_CASE("Test integer parsing") {
@@ -45,12 +46,8 @@ TEST_CASE("Test full input -> output of single integer") {
 
         // Read byte code back in
         std::vector<uint64_t> recovered = code_from_stream(stream);
-        uint64_t result = i.interpret(recovered);
-        CHECK(result == ((42 << FNUM_SHIFT) | FNUM_TAG));
-
-        std::stringstream output;
-        print_value(result, output);
-        CHECK(output.str() == "42\n");
+        std::string output = i.interpret(recovered);
+        CHECK(output == "42\n");
     }
 }
 
@@ -147,11 +144,8 @@ TEST_CASE("Main test loop to input .scm and confirm outputs") {
             std::vector<uint64_t> recovered = code_from_stream(intermed);
 
             // Interpret
-            uint64_t result = i.interpret(recovered);
-
-            // I/O
-            print_value(result, output);
-            CHECK(output.str() == t.expect);
+            std::string final_result = i.interpret(recovered);
+            CHECK(final_result == t.expect);
         }
     }
 
