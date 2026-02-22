@@ -16,9 +16,8 @@ int main(int argc, char** argv) {
     Interpreter i;
     std::vector<uint64_t> code = code_from_stream(std::cin);
 
-    uint64_t result = i.interpret(code);
-    printf("Return val (top of stack rn): \n");
-    print_value(result, nullptr, std::cout);
+    std::string result = i.interpret(code);
+    std::cout << "Return val (top of stack rn): \n" << result;
 
     exit(EXIT_SUCCESS);
 }

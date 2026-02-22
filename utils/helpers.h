@@ -64,6 +64,8 @@ enum I : uint64_t {
     VECOP, VECLEN, VECREF, VECSET, VECAPP,
     BEGIN, BEGINPOP,
     SETBASE, REBASE,
+    LAMBDA, LEFTOVER,
+    LABELS, CODE, PRIMCALL, LABELCALL,
 };
 
 const std::map<std::string, I> keyws = {
@@ -78,6 +80,7 @@ const std::map<std::string, I> keyws = {
     {"vector", VECOP}, {"vector-length", VECLEN}, {"vector-ref", VECREF},
     {"vector-set!", VECSET}, {"vector-append", VECAPP},
     {"begin", BEGIN},
+    {"lambda", LAMBDA}, {".", LEFTOVER},
 };
 
 // For printing parser/compiler outputs
@@ -93,14 +96,18 @@ const std::map<I, std::string> keyw_lu = {
     {VECOP, "vector"}, {VECLEN, "vector-length"}, {VECREF, "vector-ref"},
     {VECSET, "vector-set!"}, {VECAPP, "vector-append"},
     {BEGIN, "begin"},
+    {LAMBDA, "lambda"}, {LEFTOVER, "."},
 };
 
 // Things that should only be compiler output instructions
 const std::map<I, std::string> instr_lu = {
-    {LOAD64, "LOAD64"}, {RETURN, "RETURN"}, {STOREUV, "STOREUV"}, {LOADUV, "LOADUV"},
+    {LOAD64, "LOAD64"}, {RETURN, "RETURN"},
+    {STOREUV, "STOREUV"}, {LOADUV, "LOADUV"},
     {JUMP, "JUMP"}, {JUMPIFFALSE, "JUMPIFFALSE"}, {LOADPTR, "LOADPTR"},
     {BEGINPOP, "BEGINPOP"},
     {SETBASE, "SETBASE"}, {REBASE, "REBASE"},
+    {LABELS, "LABELS"}, {CODE, "CODE"},
+    {PRIMCALL, "PRIMCALL"}, {LABELCALL, "LABELCALL"},
 };
 
 /* Stuff for internal representation

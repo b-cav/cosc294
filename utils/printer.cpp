@@ -66,7 +66,20 @@ void print_expr(Expr &expr, int indent) {
             for (int i = 0; i < indent; i++) { fprintf(stderr, "  "); }
             fprintf(stderr, "}\n");
             break;
+        case PAIR :
+            fprintf(stderr, "PAIR\n");
+            break;
+        case PROC :
+            fprintf(stderr, "PROCEDURE {\n");
+            prog_print(*(expr.nest), indent + 1);
+            for (int i = 0; i < indent; i++) { fprintf(stderr, "  "); }
+            fprintf(stderr, "}\n");
+            break;
+        case PORT :
+            fprintf(stderr, "PORT\n");
+            break;
         default :
+            fprintf(stderr, "ERR: UNKNOWN\n");
             break;
     }
 }
@@ -116,6 +129,10 @@ void bc_print(std::istream &stream) {
             fprintf(stderr, "UVAR: Depth %ld, offset %ld\n", dep, offset);
         } else if (instr == I::JUMP || instr == I::JUMPIFFALSE) {
             fprintf(stderr, "STEP: %ld\n", readword());
+        } else if (instr == I::LABELCALL) {
+            fprintf(stderr, "LOCN: #%ld\n", readword());
+        } else if (instr == I::LABELS) {
+            fprintf(stderr, "PROC: #%ld\n", readword());
         }
     }
 }

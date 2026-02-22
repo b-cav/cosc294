@@ -116,6 +116,7 @@ TEST_CASE("Main test loop to input .scm and confirm outputs") {
         {"lots of lets",                "(let ((a 4)) (let ((a (let ((a 5)) a))) (let ((a 6)) a)))", "6\n"},
         {"shadowing after",             "(let ((x 2) (y 3)) (+ y (let ((y 4)) y)))", "7\n"},
         {"shadowing before",            "(let ((x 2) (y 3)) (+ (let ((y 4)) y) y))", "7\n"},
+        {"more shadowing",              "(let ((y (let ((x 4)) x)) (x 2)) (+ x (+ y (let ((x 5)) x))))", "11\n"},
         // ------------------------------------------------------
         // IF EXPRESSIONS
         // ------------------------------------------------------
@@ -124,7 +125,26 @@ TEST_CASE("Main test loop to input .scm and confirm outputs") {
         {"nested if true true",         "(if (integer? 4) (if (< 1 2) (+ 4 5) (* 2 3)) (+ 6 7))", "9\n"},
         {"nested if true false",        "(if (integer? 4) (if (> 1 2) (+ 4 5) (* 2 3)) (+ 6 7))", "6\n"},
         {"nested if false true",        "(if (boolean? 4) (+ 6 7) (if (not #f) (+ 4 5) (* 2 3)))", "9\n"},
-        {"nested if false false",       "(if (not 4) (+ 6 7) (if (zero? #f) (+ 4 5) (* 2 3)))", "6\n"}
+        {"nested if false false",       "(if (not 4) (+ 6 7) (if (zero? #f) (+ 4 5) (* 2 3)))", "6\n"},
+        // ------------------------------------------------------
+        // PAIRS
+        // ------------------------------------------------------
+
+        // ------------------------------------------------------
+        // STRINGS
+        // ------------------------------------------------------
+
+        // ------------------------------------------------------
+        // VECTORS
+        // ------------------------------------------------------
+
+        // ------------------------------------------------------
+        // LAMBDAS
+        // ------------------------------------------------------
+        {"simple lambda",               "((lambda (x) (+ x 3)) 4)", "7\n"},
+        {"reuse variable",              "((lambda (x) (* x x)) 4)", "16\n"},
+        {"let lambda combo",            "(let ((y 3)) ((lambda (x) (+ x y)) 4))", "7\n"},
+
     };
 
     for (auto& t : tests) {

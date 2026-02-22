@@ -85,6 +85,7 @@ Expr Parser::parse_nest(void) {
 
     if (peek() == ')') {
         expr.type = EMPT;
+        return(expr);
     } else {
         expr.type = NEST;
         expr.nest = new std::vector<Expr>();
@@ -98,6 +99,13 @@ Expr Parser::parse_nest(void) {
     #ifdef VERBOSEPARSER
     std::cerr << "END parse_nest\n";
     #endif
+
+    // Check if first arg of the nest is a lambda
+    // Then the nest is a procedure
+    if (((*expr.nest)[0]).type == KEYW &&
+        (*expr.nest)[0].keyw == I::LAMBDA) {
+        expr.type = PROC;
+    }
     return(expr);
 }
 
@@ -251,7 +259,10 @@ std::vector<Expr> scheme_parse(std::string source) {
 // COMPILER FUNCTIONS
 // ----------------------------------------------------------
 void Compiler::compile(std::vector<Expr> &expr_vec, std::size_t start) {
-    if (start >= expr_vec.size()) throw std::logic_error("Bad compile start\n");
+    if (start >= expr_vec.size()) {
+        std::cerr << "size: " << expr_vec.size() << " start: " << start << "\n";
+        throw std::logic_error("Bad compile start\n");
+    }
     for (std::size_t i = start; i < expr_vec.size(); ++i) {
         compile_one(expr_vec[i]);
     }
@@ -303,13 +314,14 @@ void Compiler::compile_one(Expr &expr) {
             break;
         } case NEST : {
             std::vector<Expr> &inside = *(expr.nest);
-            // Recurse starting at first arg (pos 1)
             Expr &opr = inside[0];
 
             // Handle let expressions: (let <bindings> <body>)
             // <bindings> : ((<variable1> <init1>) ...)
             if (opr.type == KEYW && opr.keyw == LET) {
+                // Create a new scope base pointer
                 code.push_back(I::SETBASE);
+
                 // Deal with <bindings>
                 if (inside[1].type == NEST) {
                     // Add new uvar map for this new scope
@@ -373,8 +385,28 @@ void Compiler::compile_one(Expr &expr) {
                 }
                 compile_one(inside[inside.size() - 1]); // Last expr, whose retval not cleared
             }
+            // Handle nested expressions calling procedures
+            else if (opr.type == PROC) {
+                // Save byte code loc of lambda
+                uint64_t loc = code.size();
+                // Compile the lambda/proc
+                compile_one(opr);
+
+                // Create new scope for proc call
+                code.push_back(I::SETBASE);
+                // Compile the args
+                compile(inside, 1);
+
+                // Push the "operator" which is just ref to the lambda
+                code.push_back(LABELCALL);
+                code.push_back(loc);
+
+                // Exit the lambda frame
+                code.push_back(I::REBASE);
+            }
             // Handle simpler (<operator> <arg> <arg> ...) expressions
             else {
+                // Recurse starting at first arg (pos 1)
                 compile(inside, 1);
 
                 // Add operator codes
@@ -391,8 +423,46 @@ void Compiler::compile_one(Expr &expr) {
                 }
             }
             break;
-        } default :
+        } case PROC : {
+            std::vector<Expr> &inside = *(expr.nest);
+            Expr &opr = inside[0];
+
+            // Handle lambda expressions: (lambda <formals> <body>)
+            // where <formals> is
+            // (<var_1> ...)                     --> fixed num of args
+            // <var>                             --> any num of args, as list
+            // (<var_1> ... <var_n> . <var_n+1>) --> n or more args, n+1 onwards as list
+            if (opr.type == KEYW && opr.keyw == I::LAMBDA) {
+                // Create new map for lambda variables
+                uvar_maps.push_back(std::unordered_map<std::string, uint64_t>());
+
+                // Denote new anonymous procedure
+                code.push_back(I::LABELS);
+                // Bookmark spot to put jump counter
+                uint64_t loc = code.size();
+                code.push_back(0);
+
+                lambda_cnt += 1;
+
+                if (inside.size() == 3) {
+                    compile_code(inside);
+                } else {
+                    throw std::logic_error("Lambda must match (lambda <formals> <body>)\n");
+                }
+                // Close lambda scope
+                uvar_maps.pop_back();
+                code.push_back(I::RETURN);
+                // Fill in skip location
+                code[loc] = code.size();
+            } else {
+                throw std::logic_error("Invalid procedure\n");
+            }
             break;
+        } default : {
+            std::cerr << "Type error: " << type_lu.at(expr.type) << "\n";
+            throw std::logic_error("Unknown parse object\n");
+            break;
+        }
     }
 }
 
@@ -404,14 +474,16 @@ void Compiler::compile_function(std::vector<Expr> &int_rep) {
 void Compiler::compile_bindings(std::vector<Expr> &bindings) {
     uint64_t uvar_idx = 1; // Count from 1 because offset from base anyways
 
-    for (auto &itr : bindings) {
+    for (Expr &itr : bindings) {
         // Go through the bindings, which should be Expr vectors holding two Exprs
-        // Compile the second Expr, push STOREUV, push the first Expr (var name)
+        // Add them to the correct variable map at the right scope
         if (itr.type == NEST && itr.nest->size() == 2) {
             std::vector<Expr> &bind = *(itr.nest);
+            // The expression to which the local is bound is just stored
+            // on the stack offset from the base pointer
             compile_one(bind[1]);
             if (bind[0].type == UVAR) {
-                // Variables only stored internally
+                // Map var name to var count at current scope
                 uvar_maps.back()[*(bind[0].uvar)] = uvar_idx;
                 uvar_idx += 1;
             } else {
@@ -438,10 +510,69 @@ void Compiler::compile_uvar(std::string *uvar){
             code.push_back(i);
             code.push_back(it->second);
             return;
-        } else {
-            throw std::logic_error("Unbound variable" + *uvar + "\n");
         }
     }
+    // Error handling; list current vars and scopes
+    for (int i = uvar_maps.size()-1; i >= 0; --i) {
+        std::cerr << "Map " << i << " has " << uvar_maps[i].size() << " vars\n";
+        for (auto& pair : uvar_maps[i]) {
+            std::cerr << pair.first << "\n";
+        }
+    }
+    throw std::logic_error("Unbound variable " + *uvar + " at current scope depth " + std::to_string(uvar_maps.size()-1) + "\n");
+}
+
+// Compile lambda interior code
+void Compiler::compile_code(std::vector<Expr> &lambda) {
+    // -----------------------------------------------------------------------
+    // Map the lvars
+    uint64_t lvar_idx = 1;
+    int flag = 0;
+
+    // Deal with <formals> following the lambda arg
+    // Case where lambda takes any number of args as list
+    if (lambda[1].type == UVAR) {
+        Expr &formals = lambda[1];
+        // Use 0 to indicate list argument
+        uvar_maps.back()[*(formals.uvar)] = 0;
+    }
+    // Other cases (set num or "n or more" args)
+    else if (lambda[1].type == NEST) {
+        std::vector<Expr> &formals = *(lambda[1].nest);
+        // Loop through args and map them to an index at this scope
+        for (size_t i = 0; i < formals.size(); ++i) {
+            if (formals[i].type == UVAR) {
+                if (flag == 1 && i == formals.size() - 1) {
+                    // Use 0 to indicate list argument
+                    uvar_maps.back()[*(formals[i].uvar)] = 0;
+                } else if (uvar_maps.back().find(*(formals[0].uvar)) == uvar_maps.back().end()) {
+                    uvar_maps.back()[*(formals[i].uvar)] = lvar_idx;
+                    lvar_idx += 1;
+                } else {
+                    throw std::logic_error("Repeated arg in lambda <formals>\n");
+                }
+            } else if (formals[i].type == KEYW && formals[i].keyw == I::LEFTOVER) {
+                // Period operator should be second to last arg, followed by one more UVAR
+                if (i + 2 != formals.size()) {
+                    throw std::logic_error("Invalid period operator in lambda <formals>\n");
+                }
+                flag = 1;
+            } else {
+                throw std::logic_error("Invalid arg in lambda <formals>\n");
+            }
+        }
+
+    } else {
+        throw std::logic_error("Invalid <formals> in lambda expression\n");
+    }
+
+    // -----------------------------------------------------------------------
+    // Deal with function code itself
+
+    // Store the location of the function in the bytecode
+    lambda_locs[lambda_cnt] = code.size();
+    compile_one(lambda[2]);
+
 }
 
 void Compiler::write_to_stream(std::ostream &f) {

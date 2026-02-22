@@ -40,6 +40,9 @@ std::string Interpreter::interpret(std::vector<uint64_t> code) {
                 uint64_t len = readword(); Type type;
                 uint64_t start = hptr;
 
+                std::cerr << "len?? read " << len << "\n";
+                std::cerr << "prev?? " << code[pc-2] << "\n";
+                std::cerr << "next?? " << code[pc] << "\n";
                 // Get the complex object length and type
                 if ((len & VECT_MASK) == VECT_TAG) {
                     type = VECT;
@@ -495,6 +498,21 @@ std::string Interpreter::interpret(std::vector<uint64_t> code) {
                 #ifdef VERBOSE
                 std::cerr << "  rebased to " << base << "\n";
                 #endif
+                break;
+            }
+            // ----------------------------------------------
+            // LAMBDAS
+            // ----------------------------------------------
+            case I::LABELS : {
+                // Skip through fxn definition
+                uint64_t end = readword();
+                pc = end;
+                break;
+            } case I::LABELCALL : {
+                // Store current pc, jump to the function
+                uint64_t fxn_loc = readword();
+                push(pc);
+                pc = fxn_loc + 2; // Plus 2 to skip LABELS and id
                 break;
             }
             // ----------------------------------------------

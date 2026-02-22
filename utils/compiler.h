@@ -58,7 +58,7 @@ private :
     uint64_t pos;
     uint64_t length;
     const std::string wsp = " \n\t\v\f\r";
-    const std::string ops = "+-*<>=";
+    const std::string ops = "+-*<>=.";
 };
 
 // ----------------------------------------------------------
@@ -71,9 +71,9 @@ std::vector<Expr> scheme_parse(std::string source);
 class Compiler {
 public :
     // Constructor
-    // Add an empty map as 0 scope depth for globals
+    // Adds an empty map as 0 scope depth for globals
     Compiler(void) :
-        uvar_maps(1) {}
+        uvar_maps(1), lambda_cnt(0) {}
 
     // Top-level compile function
     void compile(std::vector<Expr> &expr_vec, std::size_t start);
@@ -84,7 +84,7 @@ public :
     // Write byte code to file
     void write_to_stream(std::ostream &f);
 
-    // Append RETURN opcode
+    // Compile but append RETURN opcode
     void compile_function(std::vector<Expr> &int_rep);
 
     // Compile let bindings
@@ -92,6 +92,9 @@ public :
 
     // Compile local variables outside of binding context
     void compile_uvar(std::string *uvar);
+
+    // Compile lambda interior code
+    void compile_code(std::vector<Expr> &code);
 
     // Getter
     const std::vector<uint64_t>& get_code() const {
@@ -102,5 +105,7 @@ private :
     std::vector<uint64_t> code;
     std::vector<std::unordered_map<std::string, uint64_t>> uvar_maps;
     uint64_t uvar_cnt;
+    uint64_t lambda_cnt;
+    std::unordered_map<uint64_t, uint64_t> lambda_locs;
 };
 
