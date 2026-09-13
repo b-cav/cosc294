@@ -1,4 +1,11 @@
+#!/bin/bash
+
 pushd ../utils/
+make clean > /dev/null
+make > /dev/null
+popd
+
+pushd ../execs/
 make clean > /dev/null
 make > /dev/null
 popd

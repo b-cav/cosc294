@@ -399,6 +399,7 @@ void Compiler::compile_one(Expr &expr) {
 
                 // Push the "operator" which is just ref to the lambda
                 code.push_back(LABELCALL);
+                code.push_back(inside.size() - 1); // number of args
                 code.push_back(loc);
 
                 // Exit the lambda frame
@@ -433,27 +434,37 @@ void Compiler::compile_one(Expr &expr) {
             // <var>                             --> any num of args, as list
             // (<var_1> ... <var_n> . <var_n+1>) --> n or more args, n+1 onwards as list
             if (opr.type == KEYW && opr.keyw == I::LAMBDA) {
+                std::pair<uint64_t, uint64_t> fxn_info;
+
                 // Create new map for lambda variables
                 uvar_maps.push_back(std::unordered_map<std::string, uint64_t>());
 
                 // Denote new anonymous procedure
                 code.push_back(I::LABELS);
-                // Bookmark spot to put jump counter
+                // Bookmark spot to put function annotations
                 uint64_t loc = code.size();
+                code.push_back(0);
+                code.push_back(0);
                 code.push_back(0);
 
                 lambda_cnt += 1;
 
                 if (inside.size() == 3) {
-                    compile_code(inside);
+                    fxn_info = compile_code(inside);
                 } else {
                     throw std::logic_error("Lambda must match (lambda <formals> <body>)\n");
                 }
                 // Close lambda scope
                 uvar_maps.pop_back();
                 code.push_back(I::RETURN);
+
                 // Fill in skip location
                 code[loc] = code.size();
+
+                // Fill in fxn annotations
+                code[loc+1] = fxn_info.first;   // How many fixed args
+                code[loc+2] = fxn_info.second;  // Whether there is a list arg
+
             } else {
                 throw std::logic_error("Invalid procedure\n");
             }
@@ -523,9 +534,11 @@ void Compiler::compile_uvar(std::string *uvar){
 }
 
 // Compile lambda interior code
-void Compiler::compile_code(std::vector<Expr> &lambda) {
+// Return how many fixed args, whether fxn makes list arg
+std::pair<uint64_t, uint64_t> Compiler::compile_code(std::vector<Expr> &lambda) {
     // -----------------------------------------------------------------------
     // Map the lvars
+    uint64_t fixed, makes_list;
     uint64_t lvar_idx = 1;
     int flag = 0;
 
@@ -535,6 +548,7 @@ void Compiler::compile_code(std::vector<Expr> &lambda) {
         Expr &formals = lambda[1];
         // Use 0 to indicate list argument
         uvar_maps.back()[*(formals.uvar)] = 0;
+        fixed = 0; makes_list = 1;
     }
     // Other cases (set num or "n or more" args)
     else if (lambda[1].type == NEST) {
@@ -545,11 +559,11 @@ void Compiler::compile_code(std::vector<Expr> &lambda) {
                 if (flag == 1 && i == formals.size() - 1) {
                     // Use 0 to indicate list argument
                     uvar_maps.back()[*(formals[i].uvar)] = 0;
-                } else if (uvar_maps.back().find(*(formals[0].uvar)) == uvar_maps.back().end()) {
+                } else if (uvar_maps.back().find(*(formals[i].uvar)) == uvar_maps.back().end()) {
                     uvar_maps.back()[*(formals[i].uvar)] = lvar_idx;
                     lvar_idx += 1;
                 } else {
-                    throw std::logic_error("Repeated arg in lambda <formals>\n");
+                    throw std::logic_error("Repeated arg in lambda <formals> " + *(formals[i].uvar) + "\n");
                 }
             } else if (formals[i].type == KEYW && formals[i].keyw == I::LEFTOVER) {
                 // Period operator should be second to last arg, followed by one more UVAR
@@ -560,6 +574,14 @@ void Compiler::compile_code(std::vector<Expr> &lambda) {
             } else {
                 throw std::logic_error("Invalid arg in lambda <formals>\n");
             }
+        }
+
+        if (flag == 1) {
+            fixed = formals.size() - 2; // Remove dot op and list
+            makes_list = 1;
+        } else {
+            fixed = formals.size();
+            makes_list = 0;
         }
 
     } else {
@@ -573,6 +595,7 @@ void Compiler::compile_code(std::vector<Expr> &lambda) {
     lambda_locs[lambda_cnt] = code.size();
     compile_one(lambda[2]);
 
+    return(std::make_pair(fixed, makes_list));
 }
 
 void Compiler::write_to_stream(std::ostream &f) {

@@ -8,6 +8,7 @@
  */
 
 //#define VERBOSE
+//#define REPORT // list each executed instr
 #include "interpreter.h"
 
 // ----------------------------------------------------------
@@ -28,6 +29,15 @@ std::string Interpreter::interpret(std::vector<uint64_t> code) {
     // Interpret loop
     while (true) {
         uint64_t instr = readword();
+
+        #ifdef REPORT
+        try {
+            std::cerr << "Curr instr #" << instr << " is " << instr_lu.at(static_cast<I>(instr)) << "\n";
+        } catch (...) {
+            std::cerr << keyw_lu.at(static_cast<I>(instr)) << "\n";
+        }
+        #endif
+
         switch (instr) {
             // ----------------------------------------------
             // PUSH VALUES (DIRECTLY OR HEAP PTR)
@@ -40,9 +50,6 @@ std::string Interpreter::interpret(std::vector<uint64_t> code) {
                 uint64_t len = readword(); Type type;
                 uint64_t start = hptr;
 
-                std::cerr << "len?? read " << len << "\n";
-                std::cerr << "prev?? " << code[pc-2] << "\n";
-                std::cerr << "next?? " << code[pc] << "\n";
                 // Get the complex object length and type
                 if ((len & VECT_MASK) == VECT_TAG) {
                     type = VECT;
@@ -194,6 +201,12 @@ std::string Interpreter::interpret(std::vector<uint64_t> code) {
                 // Get base depth, offset
                 uint64_t uvar_dep = readword();
                 uint64_t uvar_offset = readword();
+
+                // 0 offset means load args as list
+                if (uvar_offset == 0) {
+                    std::cerr << "Not implemented: infinite args as list\n";
+                }
+
                 #ifdef VERBOSE
                 std::cerr << "dep " << uvar_dep << "; offset " << uvar_offset << "\n";
                 #endif
@@ -509,10 +522,29 @@ std::string Interpreter::interpret(std::vector<uint64_t> code) {
                 pc = end;
                 break;
             } case I::LABELCALL : {
-                // Store current pc, jump to the function
-                uint64_t fxn_loc = readword();
+                // Save current pc, get # passed args & fxn loc
                 push(pc);
-                pc = fxn_loc + 2; // Plus 2 to skip LABELS and id
+                uint64_t passed = readword();
+                uint64_t fxn_loc = readword();
+
+                // Check # args, prep arguments into lists if necessary
+                uint64_t fixed = code[fxn_loc+2];
+                uint64_t has_list = code[fxn_loc+3];
+
+                if (has_list == 0 && passed != fixed) {
+                    throw std::logic_error("Lambda expected " + std::to_string(fixed) +
+                                           " arguments; got " + std::to_string(passed) + "\n");
+                } else if (has_list = 1) {
+                    for (uint64_t i = 0; i < (passed - fixed); ++i) {
+                        uint64_t car = pop();
+                        uint64_t cdr = (hptr << PAIR_SHIFT) | PAIR_TAG;
+                        heap[hptr] = car;
+                        heap[hptr + 1] = cdr;
+                        hptr += 2;
+                    }
+                }
+                // Jump to the function
+                pc = fxn_loc + 4; // Plus 4 to skip LABELS, len, args, haslist?
                 break;
             }
             // ----------------------------------------------

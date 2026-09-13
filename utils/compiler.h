@@ -10,6 +10,7 @@
 #pragma once
 #include <cctype>
 #include <fstream>
+#include <utility>
 #include "helpers.h"
 
 // ----------------------------------------------------------
@@ -94,7 +95,8 @@ public :
     void compile_uvar(std::string *uvar);
 
     // Compile lambda interior code
-    void compile_code(std::vector<Expr> &code);
+    // Return how many fixed args, whether fxn makes list arg
+    std::pair<uint64_t, uint64_t> compile_code(std::vector<Expr> &code);
 
     // Getter
     const std::vector<uint64_t>& get_code() const {

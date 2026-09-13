@@ -25,7 +25,7 @@ void print_expr(Expr &expr, int indent);
 void bc_print(std::istream &stream);
 
 // Detag and print a uint64_t
-void print_value(uint64_t val, uint64_t *heap, std::ostream &s);
+void print_value(uint64_t val, uint64_t *heap, std::ostream &s, bool nl = true, bool list_first = true);
 
 // Convert stream back to code vector
 std::vector<uint64_t> code_from_stream(std::istream &s);

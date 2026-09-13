@@ -130,40 +130,54 @@ void bc_print(std::istream &stream) {
         } else if (instr == I::JUMP || instr == I::JUMPIFFALSE) {
             fprintf(stderr, "STEP: %ld\n", readword());
         } else if (instr == I::LABELCALL) {
-            fprintf(stderr, "LOCN: #%ld\n", readword());
+            fprintf(stderr, "ARGS: %ld\n", readword());
+            fprintf(stderr, "LOCN: Byte code #%ld\n", readword());
         } else if (instr == I::LABELS) {
-            fprintf(stderr, "PROC: #%ld\n", readword());
+            fprintf(stderr, "FEND: Byte code #%ld\n", readword());
+            fprintf(stderr, "ARGS: %ld\n", readword());
+            fprintf(stderr, "LIST: %s\n", readword() ? "true" : "false");
         }
     }
 }
 
 // ----------------------------------------------------------
 // Detag and print a uint64_t
-void print_value(uint64_t val, uint64_t *heap, std::ostream &s) {
+void print_value(uint64_t val, uint64_t *heap, std::ostream &s, bool nl, bool list_first) {
     if ((val & FNUM_MASK) == FNUM_TAG) {
-        s << (val >> FNUM_SHIFT) << "\n";
+        s << (val >> FNUM_SHIFT);
     } else if ((val & CHAR_MASK) == CHAR_TAG) {
-        s << reinterpret_cast<unsigned char>(static_cast<uint8_t>(val >> CHAR_SHIFT)) << "\n";
+        s << reinterpret_cast<unsigned char>(static_cast<uint8_t>(val >> CHAR_SHIFT));
     } else if ((val & BOOL_MASK) == BOOL_TAG) {
         if ((val >> BOOL_SHIFT) == 1) {
-            s << "#t\n";
+            s << "#t";
         } else {
-            s << "#f\n";
+            s << "#f";
         }
     } else if ((val & PAIR_MASK) == PAIR_TAG) {
         if (heap == nullptr) {
-            s << "PAIR (heap offset " << (val >> PAIR_SHIFT) << " words)\n";
+            s << "PAIR (heap offset " << (val >> PAIR_SHIFT) << " words)";
         } else {
             uint64_t* loc = heap + (val >> PAIR_SHIFT);
-            s << "(";
-            print_value(*loc, heap, s);
-            s << " . ";
-            print_value(*(loc + 1), heap, s);
-            s << ")\n";
+
+            if (list_first == true) {
+                s << "(";
+            }
+            print_value(*loc, heap, s, false, false);
+
+            if ((*(loc + 1) & PAIR_MASK) == PAIR_TAG) {
+                s << " ";
+                print_value(*(loc + 1), heap, s, false, false);
+            } else if ((*(loc + 1) & PAIR_MASK) == PAIR_TAG) {
+                s << ")";
+            } else {
+                s << " . ";
+                print_value(*(loc + 1), heap, s, false, false);
+                s << ")";
+            }
         }
     } else if ((val & STRG_MASK) == STRG_TAG) {
         if (heap == nullptr) {
-            s << "STRING (heap offset " << (val >> STRG_SHIFT) << " words)\n";
+            s << "STRING (heap offset " << (val >> STRG_SHIFT) << " words)";
         } else {
             uint64_t loc = (val >> STRG_SHIFT);
             uint64_t strlen = heap[loc];
@@ -172,28 +186,31 @@ void print_value(uint64_t val, uint64_t *heap, std::ostream &s) {
                 char c = (heap[loc + i]) >> CHAR_SHIFT;
                 heap_str += c;
             }
-            s << heap_str << "\n";
+            s << heap_str << "";
         }
     } else if ((val & VECT_MASK) == VECT_TAG) {
         if (heap == nullptr) {
-            s << "VECTOR (heap offset " << (val >> VECT_SHIFT) << " words)\n";
+            s << "VECTOR (heap offset " << (val >> VECT_SHIFT) << " words)";
         } else {
             uint64_t loc = (val >> VECT_SHIFT);
-            uint64_t strlen = heap[loc];
+            uint64_t veclen = heap[loc];
 
             s << "#(";
             // TODO: Convert to stringstream with recursive print val
             std::string heap_str;
-            for (uint64_t i = strlen; i > 0; --i) {
+            for (uint64_t i = veclen; i > 0; --i) {
                 char c = (heap[loc + i]) >> CHAR_SHIFT;
                 heap_str += c;
             }
-            s << heap_str << ")\n";
+            s << heap_str << ")";
         }
     } else if (val == EMPTY_LIST) {
-        s << "()\n";
+        s << "()";
     } else {
-        s << "invalid input to print_value()\n";
+        s << "invalid input to print_value()";
+    }
+    if (nl == true) {
+         s << "\n";
     }
 }
 

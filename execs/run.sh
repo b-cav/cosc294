@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Option to run with no make
 if [[ !($# == 1 && $1 == "-nm") ]] ; then
     pushd ../utils/ > /dev/null
     make clean > /dev/null

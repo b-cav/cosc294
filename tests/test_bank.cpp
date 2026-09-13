@@ -129,11 +129,21 @@ TEST_CASE("Main test loop to input .scm and confirm outputs") {
         // ------------------------------------------------------
         // PAIRS
         // ------------------------------------------------------
+        {"simple cons",                 "(cons 10 4)", "(10 . 4)\n"},
+        {"simple car",                  "(car (cons 10 4))", "10\n"},
+        {"simple cdr",                  "(cdr (cons 10 4))", "4\n"},
+        {"nested cons",                 "(cons 10 (cons 4 5))", "(10 4 . 5)\n"},
+        {"nested car",                  "(car (cons 10 (cons 4 5)))", "10\n"},
+        {"nested cdr",                  "(cdr (cons 10 (cons 4 5)))", "(4 . 5)\n"},
 
         // ------------------------------------------------------
         // STRINGS
         // ------------------------------------------------------
-
+      //{"string",                      "(string #\a)", "a\n"},
+      //{"string-length",                      },
+      //{"string-ref",                      },
+      //{"string-set!",                      },
+      //{"string-append",               "(string-append \"hello\" \" there\")", "hello there\n"},
         // ------------------------------------------------------
         // VECTORS
         // ------------------------------------------------------
@@ -144,6 +154,11 @@ TEST_CASE("Main test loop to input .scm and confirm outputs") {
         {"simple lambda",               "((lambda (x) (+ x 3)) 4)", "7\n"},
         {"reuse variable",              "((lambda (x) (* x x)) 4)", "16\n"},
         {"let lambda combo",            "(let ((y 3)) ((lambda (x) (+ x y)) 4))", "7\n"},
+        {"two var lambda",              "((lambda (x y) (+ x y)) 5 6)", "11\n"},
+      //{"lambda any num of args",      "((lambda x x) 3 4 5 6)", "(3 4 5 6)\n"},
+      //{"lambda n or more args",       "((lambda (x y . z) z) 3 4 5 6)", "(5 6)\n"},
+      //{"lam in let, any num args",    "(let ((a 1) (b 5)) ((lambda z z) 6 2 b 3 a))", "(6 2 5 3 1)\n"},
+      //{"lam in let, n or more args",  "(let ((a 1) (b 5)) ((lambda (x y . z) z) 6 2 b 3 a))", "(5 3 1)\n"},
 
     };
 
